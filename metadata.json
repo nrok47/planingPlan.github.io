@@ -1,0 +1,5 @@
+{
+  "name": "Project Budget Tracker",
+  "description": "An interactive web application for managing and tracking project timelines and budgets for a fiscal year. Features drag-and-drop functionality to reschedule activities and automatically calculates monthly and cumulative budget spending against predefined targets.",
+  "requestFramePermissions": []
+}
