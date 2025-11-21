@@ -73,13 +73,38 @@ const App: React.FC = () => {
           // Try Apps Script / API URL first (if provided), otherwise fall back to CSV
           let loaded = false;
           if (API_URL) {
+            // Helper to accept several response shapes from Apps Script
+            const normalizeApiData = (raw: any): Project[] => {
+              if (!raw) return [];
+              if (Array.isArray(raw)) return raw as Project[];
+              if (raw.data && Array.isArray(raw.data)) return raw.data as Project[];
+              if (raw.projects && Array.isArray(raw.projects)) return raw.projects as Project[];
+              // Sometimes Apps Script returns an object-wrapped response or a CSV text
+              return [];
+            };
+
             try {
-              const apiResp = await fetch(`${API_URL}?action=getAll`, { headers: { 'Accept': 'application/json' } });
+              const apiResp = await fetch(`${API_URL}?action=getAll`);
               if (apiResp.ok) {
-                const data = await apiResp.json();
-                if (Array.isArray(data)) {
-                  setProjects(data as Project[]);
-                  loaded = true;
+                const contentType = apiResp.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                  const data = await apiResp.json();
+                  const normalized = normalizeApiData(data);
+                  if (normalized.length) {
+                    setProjects(normalized);
+                    loaded = true;
+                  }
+                } else {
+                  // maybe plain text -> try CSV parser
+                  const text = await apiResp.text();
+                  if (text && text.includes('\n')) {
+                    const { parseProjectsFromCSV } = await import('./src/csvParser');
+                    const projectData = parseProjectsFromCSV(text);
+                    if (projectData.length) {
+                      setProjects(projectData);
+                      loaded = true;
+                    }
+                  }
                 }
               }
             } catch (err) {
@@ -88,6 +113,9 @@ const App: React.FC = () => {
                 const data = await jsonpFetch(`${API_URL}?action=getAll`);
                 if (Array.isArray(data)) {
                   setProjects(data as Project[]);
+                  loaded = true;
+                } else if (data && data.result && Array.isArray(data.result)) {
+                  setProjects(data.result as Project[]);
                   loaded = true;
                 }
               } catch (err2) {

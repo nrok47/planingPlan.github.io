@@ -46,12 +46,16 @@ export function parseCSV(text: string): string[][] {
 }
 
 export function parseProjectsFromCSV(text: string): Project[] {
-  const rows = parseCSV(text);
+  // Strip possible BOM and normalize line endings
+  const cleaned = text.replace(/\uFEFF/g, '');
+  const rows = parseCSV(cleaned);
   if (rows.length < 1) return [];
-  const headers = rows[0];
+  // Normalize headers (trim, remove BOM) and map to project fields
+  const headers = rows[0].map(h => String(h || '').replace(/\uFEFF/g, '').trim());
   const projectData: Project[] = rows.slice(1).map(values => {
     const obj = headers.reduce((acc, header, idx) => {
-      acc[header as keyof Project] = values[idx];
+      const key = header as keyof Project;
+      acc[key] = values[idx];
       return acc;
     }, {} as Record<keyof Project, any>);
     // Normalize types
