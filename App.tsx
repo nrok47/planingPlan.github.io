@@ -15,6 +15,10 @@ interface SortConfig {
   direction: SortDirection;
 }
 
+// Deployment base URL (set via env `VITE_DEPLOY_URL`). Fallback to root for local dev.
+const DEPLOY_URL = import.meta.env.VITE_DEPLOY_URL ?? '/';
+const PROJECTS_CSV_URL = DEPLOY_URL.endsWith('/') ? `${DEPLOY_URL}projects.csv` : `${DEPLOY_URL}/projects.csv`;
+
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +38,7 @@ const App: React.FC = () => {
         if (savedProjects) {
           setProjects(JSON.parse(savedProjects));
         } else {
-          const response = await fetch('/projects.csv');
+          const response = await fetch(PROJECTS_CSV_URL);
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
