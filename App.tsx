@@ -18,6 +18,38 @@ interface SortConfig {
 // Deployment base URL (set via env `VITE_DEPLOY_URL`). Fallback to root for local dev.
 const DEPLOY_URL = import.meta.env.VITE_DEPLOY_URL ?? '/';
 const PROJECTS_CSV_URL = DEPLOY_URL.endsWith('/') ? `${DEPLOY_URL}projects.csv` : `${DEPLOY_URL}/projects.csv`;
+// Optional Apps Script / API endpoint to fetch projects from: set `VITE_API_URL` in your environment.
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
+// JSONP helper (used if the Apps Script endpoint only supports JSONP / to bypass CORS)
+function jsonpFetch(url: string, timeout = 8000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const callbackName = `__jsonp_cb_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    const sep = url.includes('?') ? '&' : '?';
+    const src = `${url}${sep}callback=${callbackName}`;
+    const script = document.createElement('script');
+    let timer: number | undefined;
+    (window as any)[callbackName] = (data: any) => {
+      clearTimeout(timer);
+      delete (window as any)[callbackName];
+      document.body.removeChild(script);
+      resolve(data);
+    };
+    script.src = src;
+    script.onerror = () => {
+      clearTimeout(timer);
+      delete (window as any)[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error('JSONP script error'));
+    };
+    document.body.appendChild(script);
+    timer = window.setTimeout(() => {
+      delete (window as any)[callbackName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error('JSONP timeout'));
+    }, timeout);
+  });
+}
 
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -38,38 +70,66 @@ const App: React.FC = () => {
         if (savedProjects) {
           setProjects(JSON.parse(savedProjects));
         } else {
-          const response = await fetch(PROJECTS_CSV_URL);
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const csvText = await response.text();
-          
-          const lines = csvText.trim().split('\n');
-          const headers = lines[0].split(',').map(h => h.trim());
-          const projectData: Project[] = lines.slice(1).map(line => {
-            const values = line.split(',').map(v => v.trim());
-            const projectObject = headers.reduce((obj, header, index) => {
-              const value = values[index];
-              switch (header) {
-                case 'startMonth':
-                case 'budget':
-                  obj[header as keyof Project] = parseInt(value, 10) || 0;
-                  break;
-                case 'meetingStartDate':
-                case 'meetingEndDate':
-                  obj[header as keyof Project] = value || undefined;
-                  break;
-                case 'status':
-                  obj[header as keyof Project] = value as ProjectStatus;
-                  break;
-                default:
-                  obj[header as keyof Project] = value;
+          // Try Apps Script / API URL first (if provided), otherwise fall back to CSV
+          let loaded = false;
+          if (API_URL) {
+            try {
+              const apiResp = await fetch(`${API_URL}?action=getAll`, { headers: { 'Accept': 'application/json' } });
+              if (apiResp.ok) {
+                const data = await apiResp.json();
+                if (Array.isArray(data)) {
+                  setProjects(data as Project[]);
+                  loaded = true;
+                }
               }
-              return obj;
-            }, {} as Record<keyof Project, any>);
-            return projectObject as Project;
-          });
-          setProjects(projectData);
+            } catch (err) {
+              // network or CORS error — try JSONP fallback
+              try {
+                const data = await jsonpFetch(`${API_URL}?action=getAll`);
+                if (Array.isArray(data)) {
+                  setProjects(data as Project[]);
+                  loaded = true;
+                }
+              } catch (err2) {
+                console.warn('API JSONP fallback failed', err2);
+              }
+            }
+          }
+
+          if (!loaded) {
+            // fallback: fetch projects.csv from the deployed base
+            const response = await fetch(PROJECTS_CSV_URL);
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            const csvText = await response.text();
+            const lines = csvText.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const projectData: Project[] = lines.slice(1).map(line => {
+              const values = line.split(',').map(v => v.trim());
+              const projectObject = headers.reduce((obj, header, index) => {
+                const value = values[index];
+                switch (header) {
+                  case 'startMonth':
+                  case 'budget':
+                    obj[header as keyof Project] = parseInt(value, 10) || 0;
+                    break;
+                  case 'meetingStartDate':
+                  case 'meetingEndDate':
+                    obj[header as keyof Project] = value || undefined;
+                    break;
+                  case 'status':
+                    obj[header as keyof Project] = value as ProjectStatus;
+                    break;
+                  default:
+                    obj[header as keyof Project] = value;
+                }
+                return obj;
+              }, {} as Record<keyof Project, any>);
+              return projectObject as Project;
+            });
+            setProjects(projectData);
+          }
         }
       } catch (error) {
         console.error("Failed to load projects:", error);
