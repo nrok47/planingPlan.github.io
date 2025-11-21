@@ -29,6 +29,12 @@ jobs:
           VITE_DEPLOY_URL: '/planingPlan.github.io/'
         run: npm run build
 
+      - name: Copy static assets into `dist`
+        run: |
+          if [ -f projects.csv ]; then cp projects.csv dist/; fi
+          if [ -f index.css ]; then cp index.css dist/; fi
+          if [ -f favicon.ico ]; then cp favicon.ico dist/; fi
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
