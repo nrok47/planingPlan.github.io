@@ -1,5 +1,9 @@
 name: Deploy to GitHub Pages
 
+# Allow this workflow to push the built site using the provided GITHUB_TOKEN
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -12,17 +16,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use Node.js 20
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         env:
-          # Set the base path for the build. Adjust if you prefer a full URL.
           VITE_DEPLOY_URL: '/planingPlan.github.io/'
         run: npm run build
 
@@ -31,5 +34,3 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          # Uncomment to publish to a custom branch
-          # publish_branch: gh-pages
