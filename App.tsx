@@ -103,31 +103,11 @@ const App: React.FC = () => {
               throw new Error(`HTTP error! status: ${response.status}`);
             }
             const csvText = await response.text();
-            const lines = csvText.trim().split('\n');
-            const headers = lines[0].split(',').map(h => h.trim());
-            const projectData: Project[] = lines.slice(1).map(line => {
-              const values = line.split(',').map(v => v.trim());
-              const projectObject = headers.reduce((obj, header, index) => {
-                const value = values[index];
-                switch (header) {
-                  case 'startMonth':
-                  case 'budget':
-                    obj[header as keyof Project] = parseInt(value, 10) || 0;
-                    break;
-                  case 'meetingStartDate':
-                  case 'meetingEndDate':
-                    obj[header as keyof Project] = value || undefined;
-                    break;
-                  case 'status':
-                    obj[header as keyof Project] = value as ProjectStatus;
-                    break;
-                  default:
-                    obj[header as keyof Project] = value;
-                }
-                return obj;
-              }, {} as Record<keyof Project, any>);
-              return projectObject as Project;
-            });
+            // parse CSV using shared parser
+            // (moved to src/csvParser.ts for reuse and testing)
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { parseProjectsFromCSV } = await import('./src/csvParser');
+            const projectData = parseProjectsFromCSV(csvText);
             setProjects(projectData);
           }
         }
@@ -141,11 +121,17 @@ const App: React.FC = () => {
     loadProjects();
   }, []);
   
-  // Save projects to localStorage whenever they change
+  // Save projects to localStorage whenever they change, but avoid saving
+  // while initial loading is still in progress. We do want to persist an
+  // empty array (so deletions are persisted), therefore only guard on
+  // the `loading` flag rather than the array length.
   useEffect(() => {
-    // Don't save the initial empty array or during loading
-    if (projects.length > 0 && !loading) {
-      localStorage.setItem('projectsData', JSON.stringify(projects));
+    if (!loading) {
+      try {
+        localStorage.setItem('projectsData', JSON.stringify(projects));
+      } catch (err) {
+        console.warn('Failed to save projects to localStorage', err);
+      }
     }
   }, [projects, loading]);
 
