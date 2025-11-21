@@ -27,6 +27,8 @@ jobs:
       - name: Build
         env:
           VITE_DEPLOY_URL: '/planingPlan.github.io/'
+          # Set the Apps Script web app URL so the built site can call it.
+          VITE_API_URL: 'https://script.google.com/macros/s/AKfycbwd9pVAvMCG_EHJDW6AZ_S1WY96b1AyugbJ9wy2z81uvhbihPVtUclNrYzMwpczDGj61w/exec'
         run: npm run build
 
       - name: Copy static assets into `dist`
