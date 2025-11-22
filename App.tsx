@@ -5,6 +5,55 @@ import { CalendarModal } from './components/CalendarModal';
 import { Project, ProjectStatus } from './types';
 import { SunIcon, MoonIcon, PlusIcon, ArrowUpIcon, ArrowDownIcon, ArrowPathIcon, ArrowDownTrayIcon } from './components/Icons';
 import { PROJECT_GROUPS } from './constants';
+// Inline lightweight CSV parser fallback (kept local to avoid import issues)
+const splitCsvLine = (line: string) => {
+  const result: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++; // skip escaped quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result.map(s => s.trim());
+};
+
+const parseProjectsFromCSV = (csvText: string): Project[] => {
+  const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (lines.length <= 1) return [];
+  const headers = splitCsvLine(lines[0]).map(h => h.trim());
+  const rows = lines.slice(1);
+  const projectData: Project[] = rows.map(line => {
+    const values = splitCsvLine(line);
+    const obj = headers.reduce((acc: any, header, idx) => {
+      const value = values[idx] ?? '';
+      if (header === 'startMonth' || header === 'budget') {
+        acc[header] = parseInt(value, 10) || 0;
+      } else if (header === 'meetingStartDate' || header === 'meetingEndDate') {
+        acc[header] = value || undefined;
+      } else if (header === 'status') {
+        acc[header] = value as ProjectStatus;
+      } else {
+        acc[header] = value;
+      }
+      return acc;
+    }, {});
+    return obj as Project;
+  });
+  return projectData;
+};
 
 type SortKey = keyof Project | 'default';
 type SortDirection = 'asc' | 'desc';
@@ -23,70 +72,78 @@ const App: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'default', direction: 'asc' });
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [calendarModalMonth, setCalendarModalMonth] = useState<number | null>(null);
+  // Toast notifications
+  type ToastType = 'success' | 'error' | 'info';
+  const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+
+  const showToast = (message: string, type: ToastType = 'info', duration = 4000) => {
+    setToast({ message, type });
+    window.setTimeout(() => setToast(null), duration);
+  };
 
   // Detect dev mode (Vite sets MODE). Use any cast to avoid TS errors in this environment.
   const IS_DEV = ((import.meta as any).env?.MODE === 'development');
 
   // Extracted loader so we can call it from a dev button to force refetch.
+  // API-first loader (Google Sheets via Apps Script). No localStorage.
+  const API_URL = ((import.meta as any).env?.VITE_API_URL) as string | undefined;
+  const API_KEY = ((import.meta as any).env?.VITE_API_KEY) as string | undefined;
+
   const loadProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const savedProjects = localStorage.getItem('projectsData');
-      if (savedProjects) {
-        setProjects(JSON.parse(savedProjects));
-      } else {
-        const response = await fetch('/projects.csv');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const csvText = await response.text();
-        
-        const lines = csvText.trim().split('\n');
-        const headers = lines[0].split(',').map(h => h.trim());
-        const projectData: Project[] = lines.slice(1).map(line => {
-          const values = line.split(',').map(v => v.trim());
-          const projectObject = headers.reduce((obj, header, index) => {
-            const value = values[index];
-            switch (header) {
-              case 'startMonth':
-              case 'budget':
-                obj[header as keyof Project] = parseInt(value, 10) || 0;
-                break;
-              case 'meetingStartDate':
-              case 'meetingEndDate':
-                obj[header as keyof Project] = value || undefined;
-                break;
-              case 'status':
-                obj[header as keyof Project] = value as ProjectStatus;
-                break;
-              default:
-                obj[header as keyof Project] = value;
-            }
-            return obj;
-          }, {} as Record<keyof Project, any>);
-          return projectObject as Project;
-        });
-        setProjects(projectData);
+      if (!API_URL) {
+        throw new Error('VITE_API_URL is not configured. Set VITE_API_URL to your Apps Script endpoint.');
       }
+
+      const url = `${API_URL}?action=getAll`;
+      const resp = await fetch(url, { method: 'GET' });
+      if (!resp.ok) {
+        throw new Error(`HTTP error! status: ${resp.status}`);
+      }
+
+      const contentType = resp.headers.get('content-type') || '';
+      const text = await resp.text();
+
+      let projectData: Project[] = [];
+
+      // Try JSON first
+      if (contentType.includes('application/json') || text.trim().startsWith('{') || text.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(text);
+          // Normalize shapes: [] | { data: [] } | { projects: [] }
+          if (Array.isArray(parsed)) {
+            projectData = parsed as Project[];
+          } else if (parsed?.data && Array.isArray(parsed.data)) {
+            projectData = parsed.data;
+          } else if (parsed?.projects && Array.isArray(parsed.projects)) {
+            projectData = parsed.projects;
+          } else {
+            // Fallback: try to extract array from object
+            const arr = Object.values(parsed).find(v => Array.isArray(v));
+            if (Array.isArray(arr)) projectData = arr as Project[];
+            else projectData = [];
+          }
+        } catch (err) {
+          // Not JSON, fall through to CSV parser
+          projectData = parseProjectsFromCSV(text);
+        }
+      } else {
+        // Treat as CSV/text
+        projectData = parseProjectsFromCSV(text);
+      }
+
+      setProjects(projectData);
     } catch (error) {
-      console.error("Failed to load projects:", error);
+      console.error('Failed to load projects from API:', error);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [API_URL]);
 
-  // Load projects from localStorage or CSV on initial render
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
-  
-  // Save projects to localStorage whenever they change
-  useEffect(() => {
-    // Don't save the initial empty array or during loading
-    if (projects.length > 0 && !loading) {
-      localStorage.setItem('projectsData', JSON.stringify(projects));
-    }
-  }, [projects, loading]);
+  // Load projects on initial render
+  useEffect(() => { loadProjects(); }, [loadProjects]);
 
 
   useEffect(() => {
@@ -117,37 +174,68 @@ const App: React.FC = () => {
   };
   
   const handleSaveProject = (projectData: Omit<Project, 'id'>) => {
-    if (editingProject) {
-      setProjects(projects.map(p => 
-        p.id === editingProject.id ? { ...editingProject, ...projectData } : p
-      ));
-    } else {
-      const newProject: Project = {
-        ...projectData,
-        id: `p${Date.now()}`,
-      };
-      setProjects([...projects, newProject]);
-    }
-    handleCloseModal();
+    (async () => {
+      try {
+        if (!API_URL) throw new Error('VITE_API_URL not set');
+        let resp, result;
+        if (editingProject) {
+          const payload = { action: 'update', project: { ...(editingProject || {}), ...projectData }, apiKey: API_KEY };
+          resp = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          result = await resp.json();
+          if (result && result.ok) {
+            showToast('บันทึกโครงการสำเร็จ', 'success');
+          } else {
+            throw new Error(result && result.error ? result.error : 'update_failed');
+          }
+        } else {
+          const payload = { action: 'add', project: projectData, apiKey: API_KEY };
+          resp = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          result = await resp.json();
+          if (result && result.ok) {
+            showToast('เพิ่มโครงการสำเร็จ', 'success');
+          } else {
+            throw new Error(result && result.error ? result.error : 'add_failed');
+          }
+        }
+        await loadProjects();
+      } catch (err) {
+        console.error('Failed to save project to API', err);
+        showToast('ไม่สามารถบันทึกโครงการได้ โปรดลองใหม่', 'error');
+      } finally {
+        handleCloseModal();
+      }
+    })();
   };
   
   const handleDeleteProject = (projectId: string) => {
-    if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบโครงการนี้?')) {
-      setProjects(projects.filter(p => p.id !== projectId));
-    }
+    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบโครงการนี้?')) return;
+    (async () => {
+      try {
+        if (!API_URL) throw new Error('VITE_API_URL not set');
+        const payload = { action: 'delete', id: projectId, apiKey: API_KEY };
+        const resp = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const result = await resp.json();
+        if (result && result.ok) {
+          showToast('ลบโครงการสำเร็จ', 'success');
+        } else {
+          throw new Error(result && result.error ? result.error : 'delete_failed');
+        }
+        await loadProjects();
+      } catch (err) {
+        console.error('Failed to delete project', err);
+        showToast('ไม่สามารถลบโครงการได้ โปรดลองใหม่', 'error');
+      }
+    })();
   };
   
   const handleResetData = () => {
-    if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้น? การเปลี่ยนแปลงทั้งหมดของคุณจะหายไป')) {
-      localStorage.removeItem('projectsData');
-      window.location.reload();
+    if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการรีโหลดข้อมูลจาก Google Sheet? การเปลี่ยนแปลงที่ยังไม่ได้บันทึกอาจหายไป')) {
+      loadProjects();
     }
   };
 
   const handleReloadFromRemote = async () => {
-    // Clear persisted data and re-run loader to fetch remote CSV
     try {
-      localStorage.removeItem('projectsData');
       await loadProjects();
     } catch (err) {
       console.error('Failed to reload from remote', err);
@@ -238,6 +326,22 @@ const App: React.FC = () => {
       </div>
     );
   }
+
+  // Toast UI (simple)
+  const ToastView: React.FC = () => {
+    if (!toast) return null;
+    const base = 'fixed right-4 top-6 z-50 rounded-md px-4 py-2 shadow-lg text-sm';
+    const style = toast.type === 'success'
+      ? `${base} bg-green-600 text-white`
+      : toast.type === 'error'
+      ? `${base} bg-red-600 text-white`
+      : `${base} bg-gray-800 text-white`;
+    return (
+      <div className={style} role="status" aria-live="polite">
+        {toast.message}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen text-gray-800 dark:text-gray-200 p-4 sm:p-6 lg:p-8">

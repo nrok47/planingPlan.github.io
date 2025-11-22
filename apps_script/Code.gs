@@ -48,25 +48,31 @@ function doPost(e) {
 
   // Protect write operations if an API key is configured in Script Properties
   const configuredKey = getApiKey();
+  // allow apiKey passed either at top-level or inside `project.apiKey`
+  const providedKey = params.apiKey || (params.project && params.project.apiKey);
   if (['add','update','delete'].indexOf(action) !== -1 && configuredKey) {
-    if (!params.apiKey || params.apiKey !== configuredKey) {
+    if (!providedKey || providedKey !== configuredKey) {
       return httpError(403, 'invalid_api_key');
     }
   }
 
   try {
     if (action === 'add') {
-      const project = createProjectFromParams(params);
+      const payload = params.project || params;
+      const project = createProjectFromParams(payload);
       const newId = addProject(project);
       return success({ ok: true, id: newId });
     } else if (action === 'update') {
-      if (!params.id) return httpError(400, 'missing_id');
-      const project = createProjectFromParams(params);
-      const updated = updateProject(params.id, project);
+      const payload = params.project || params;
+      const id = params.id || (payload && payload.id);
+      if (!id) return httpError(400, 'missing_id');
+      const project = createProjectFromParams(payload);
+      const updated = updateProject(id, project);
       return success({ ok: updated === true });
     } else if (action === 'delete') {
-      if (!params.id) return httpError(400, 'missing_id');
-      const deleted = deleteProject(params.id);
+      const id = params.id;
+      if (!id) return httpError(400, 'missing_id');
+      const deleted = deleteProject(id);
       return success({ ok: deleted === true });
     } else {
       return httpError(400, 'unknown_action');
@@ -144,13 +150,15 @@ function deleteProject(id) {
 }
 
 function createProjectFromParams(params) {
+  // Accept either a flat params object or a nested `project` object
+  const src = params.project || params;
   return {
-    name: params.name || '',
-    group: params.group || '',
-    startMonth: typeof params.startMonth !== 'undefined' ? Number(params.startMonth) : 0,
-    budget: typeof params.budget !== 'undefined' ? Number(String(params.budget).replace(/[^0-9.-]+/g,'')) : 0,
-    color: params.color || '',
-    status: params.status || ''
+    name: src.name || '',
+    group: src.group || '',
+    startMonth: typeof src.startMonth !== 'undefined' ? Number(src.startMonth) : 0,
+    budget: typeof src.budget !== 'undefined' ? Number(String(src.budget).replace(/[^0-9.-]+/g,'')) : 0,
+    color: src.color || '',
+    status: src.status || ''
   };
 }
 
