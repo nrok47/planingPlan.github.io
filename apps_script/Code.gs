@@ -47,14 +47,14 @@ function doPost(e) {
   const action = params.action;
 
   // Protect write operations if an API key is configured in Script Properties
-  const configuredKey = getApiKey();
-  // allow apiKey passed either at top-level or inside `project.apiKey`
-  const providedKey = params.apiKey || (params.project && params.project.apiKey);
-  if (['add','update','delete'].indexOf(action) !== -1 && configuredKey) {
-    if (!providedKey || providedKey !== configuredKey) {
-      return httpError(403, 'invalid_api_key');
-    }
-  }
+  // API key validation removed - data is open
+  // const configuredKey = getApiKey();
+  // const providedKey = params.apiKey || (params.project && params.project.apiKey);
+  // if (['add','update','delete'].indexOf(action) !== -1 && configuredKey) {
+  //   if (!providedKey || providedKey !== configuredKey) {
+  //     return httpError(403, 'invalid_api_key');
+  //   }
+  // }
 
   try {
     if (action === 'add') {

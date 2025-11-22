@@ -87,7 +87,6 @@ const App: React.FC = () => {
   // Extracted loader so we can call it from a dev button to force refetch.
   // API-first loader (Google Sheets via Apps Script). No localStorage.
   const API_URL = ((import.meta as any).env?.VITE_API_URL) as string | undefined;
-  const API_KEY = ((import.meta as any).env?.VITE_API_KEY) as string | undefined;
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -179,7 +178,7 @@ const App: React.FC = () => {
         if (!API_URL) throw new Error('VITE_API_URL not set');
         let resp, result;
         if (editingProject) {
-          const payload = { action: 'update', project: { ...(editingProject || {}), ...projectData }, apiKey: API_KEY };
+          const payload = { action: 'update', project: { ...(editingProject || {}), ...projectData } };
           resp = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           result = await resp.json();
           if (result && result.ok) {
@@ -188,7 +187,7 @@ const App: React.FC = () => {
             throw new Error(result && result.error ? result.error : 'update_failed');
           }
         } else {
-          const payload = { action: 'add', project: projectData, apiKey: API_KEY };
+          const payload = { action: 'add', project: projectData };
           resp = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           result = await resp.json();
           if (result && result.ok) {
@@ -212,7 +211,7 @@ const App: React.FC = () => {
     (async () => {
       try {
         if (!API_URL) throw new Error('VITE_API_URL not set');
-        const payload = { action: 'delete', id: projectId, apiKey: API_KEY };
+        const payload = { action: 'delete', id: projectId };
         const resp = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const result = await resp.json();
         if (result && result.ok) {
