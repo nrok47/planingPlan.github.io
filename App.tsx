@@ -16,10 +16,10 @@ interface SortConfig {
 }
 
 // Deployment base URL (set via env `VITE_DEPLOY_URL`). Fallback to root for local dev.
-const DEPLOY_URL = import.meta.env.VITE_DEPLOY_URL ?? '/';
+const DEPLOY_URL = import.meta.env.VITE_DEPLOY_URL || '/';
 const PROJECTS_CSV_URL = DEPLOY_URL.endsWith('/') ? `${DEPLOY_URL}projects.csv` : `${DEPLOY_URL}/projects.csv`;
 // Optional Apps Script / API endpoint to fetch projects from: set `VITE_API_URL` in your environment.
-const API_URL = import.meta.env.VITE_API_URL ?? '';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 // JSONP helper (used if the Apps Script endpoint only supports JSONP / to bypass CORS)
 function jsonpFetch(url: string, timeout = 8000): Promise<any> {
