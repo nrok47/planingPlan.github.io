@@ -25,7 +25,7 @@ const App: React.FC = () => {
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [calendarModalMonth, setCalendarModalMonth] = useState<number | null>(null);
 
-  // Load projects from localStorage or CSV on initial render
+  // Load projects from localStorage or Google Sheets on initial render
   useEffect(() => {
     const loadProjects = async () => {
       setLoading(true);
@@ -34,41 +34,70 @@ const App: React.FC = () => {
         if (savedProjects) {
           setProjects(JSON.parse(savedProjects));
         } else {
-          const response = await fetch('/projects.csv');
+          // ดึงข้อมูลจาก Google Sheets ผ่าน Apps Script
+          const API_URL = 'https://script.google.com/macros/s/AKfycbwd9pVAvMCG_EHJDW6AZ_S1WY96b1AyugbJ9wy2z81uvhbihPVtUclNrYzMwpczDGj61w/exec';
+          
+          const response = await fetch(API_URL);
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
-          const csvText = await response.text();
           
-          const lines = csvText.trim().split('\n');
-          const headers = lines[0].split(',').map(h => h.trim());
-          const projectData: Project[] = lines.slice(1).map(line => {
-            const values = line.split(',').map(v => v.trim());
-            const projectObject = headers.reduce((obj, header, index) => {
-              const value = values[index];
-              switch (header) {
-                case 'startMonth':
-                case 'budget':
-                  obj[header as keyof Project] = parseInt(value, 10) || 0;
-                  break;
-                case 'meetingStartDate':
-                case 'meetingEndDate':
-                  obj[header as keyof Project] = value || undefined;
-                  break;
-                case 'status':
-                  obj[header as keyof Project] = value as ProjectStatus;
-                  break;
-                default:
-                  obj[header as keyof Project] = value;
-              }
-              return obj;
-            }, {} as Record<keyof Project, any>);
-            return projectObject as Project;
-          });
-          setProjects(projectData);
+          const data = await response.json();
+          
+          if (data.status === 'success' && Array.isArray(data.data)) {
+            const projectData: Project[] = data.data.map((row: any) => ({
+              id: row.id || `p${Date.now()}-${Math.random()}`,
+              name: row.name || '',
+              group: row.group || '',
+              startMonth: parseInt(row.startMonth, 10) || 0,
+              budget: parseInt(row.budget, 10) || 0,
+              color: row.color || '#3b82f6',
+              status: (row.status as ProjectStatus) || 'pending',
+              meetingStartDate: row.meetingStartDate || undefined,
+              meetingEndDate: row.meetingEndDate || undefined,
+            }));
+            setProjects(projectData);
+          } else {
+            throw new Error('Invalid data format from Google Sheets');
+          }
         }
       } catch (error) {
-        console.error("Failed to load projects:", error);
+        console.error("Failed to load projects from Google Sheets:", error);
+        // Fallback to CSV if Google Sheets fails
+        try {
+          const response = await fetch('/projects.csv');
+          if (response.ok) {
+            const csvText = await response.text();
+            const lines = csvText.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const projectData: Project[] = lines.slice(1).map(line => {
+              const values = line.split(',').map(v => v.trim());
+              const projectObject = headers.reduce((obj, header, index) => {
+                const value = values[index];
+                switch (header) {
+                  case 'startMonth':
+                  case 'budget':
+                    obj[header as keyof Project] = parseInt(value, 10) || 0;
+                    break;
+                  case 'meetingStartDate':
+                  case 'meetingEndDate':
+                    obj[header as keyof Project] = value || undefined;
+                    break;
+                  case 'status':
+                    obj[header as keyof Project] = value as ProjectStatus;
+                    break;
+                  default:
+                    obj[header as keyof Project] = value;
+                }
+                return obj;
+              }, {} as Record<keyof Project, any>);
+              return projectObject as Project;
+            });
+            setProjects(projectData);
+          }
+        } catch (csvError) {
+          console.error("CSV fallback also failed:", csvError);
+        }
       } finally {
         setLoading(false);
       }
