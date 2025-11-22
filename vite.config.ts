@@ -20,6 +20,19 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      build: {
+        rollupOptions: {
+          output: {
+            // ปิดการสร้างชื่อไฟล์แบบสุ่ม ใช้ชื่อธรรมดาแทน
+            entryFileNames: 'assets/[name].js',
+            chunkFileNames: 'assets/[name].js',
+            assetFileNames: (assetInfo) => {
+              // ให้ไฟล์รูปภาพและ asset อื่นๆ ใช้ชื่อธรรมดา ไม่มี hash
+              return 'assets/[name][extname]';
+            }
+          }
+        }
       }
     };
 });
