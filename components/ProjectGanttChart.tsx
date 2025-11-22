@@ -47,16 +47,22 @@ export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projects, 
               </div>
 
               {MONTH_LABELS.map((_, monthIdx) => {
-                const isStart = Number(project.startMonth) === monthIdx;
+                const startMonth = Number(project.startMonth) || 0;
+                const duration = Number(project.duration) || 1;
+                const isInRange = monthIdx >= startMonth && monthIdx < startMonth + duration;
+                const isFirstMonth = monthIdx === startMonth;
+                
                 return (
-                  <div key={monthIdx} className="h-8 flex items-center justify-center">
-                    {isStart ? (
-                      // project.color is expected to be a Tailwind background class like 'bg-blue-500'
-                      <div className={`${project.color} rounded-full text-white text-xs px-3 py-1 shadow-sm`}>
-                        {project.name}
+                  <div key={monthIdx} className="h-8 flex items-center justify-center relative">
+                    {isInRange && (
+                      <div 
+                        className={`${project.color || 'bg-blue-500'} h-6 rounded ${isFirstMonth ? 'rounded-l-md' : ''} ${monthIdx === startMonth + duration - 1 ? 'rounded-r-md' : ''} flex items-center justify-center text-xs text-white font-medium shadow-sm px-2`}
+                        style={{ width: '100%' }}
+                      >
+                        {isFirstMonth && (
+                          <span className="truncate">{project.name}</span>
+                        )}
                       </div>
-                    ) : (
-                      <div className="w-full h-2" />
                     )}
                   </div>
                 );

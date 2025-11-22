@@ -5,6 +5,7 @@ export interface Project {
   id: string;
   name: string;
   startMonth: number; // 0 for October, 1 for November, etc.
+  duration?: number; // Duration in months (default 1)
   group: string;
   budget: number;
   color: string; // Tailwind CSS color class e.g., 'bg-blue-500'
