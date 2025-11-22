@@ -52,8 +52,10 @@ export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projects, 
                 return (
                   <div key={monthIdx} className="h-14 flex items-center justify-center">
                     {isStart ? (
-                      // project.color is expected to be a Tailwind background class like 'bg-blue-500'
-                      <div className={`${project.color} rounded-lg text-white text-xs px-3 py-2 shadow-md max-w-[90%]`}> 
+                      <div 
+                        className="rounded-lg text-white text-xs px-3 py-2 shadow-md max-w-[90%]"
+                        style={{ backgroundColor: project.color || '#3b82f6' }}
+                      > 
                         <div className="font-medium">{project.name}</div>
                         <div className="text-[11px] text-white/90 truncate">{project.meetingStartDate ? `ประชุม: ${project.meetingStartDate}` : ''}</div>
                         <div className="text-[11px] text-white/90">งบ: {project.budget?.toLocaleString?.() ?? project.budget}</div>
