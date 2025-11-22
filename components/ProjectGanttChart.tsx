@@ -18,26 +18,27 @@ export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projects, 
       <div className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-3">แผนการ (Gantt)</div>
 
       <div className="min-w-full">
-        <div className="grid grid-cols-[2fr_repeat(12,5rem)] gap-2 items-center border-b border-gray-200 dark:border-gray-700 pb-2 mb-2">
-          <div className="pl-2 text-sm font-semibold text-gray-600 dark:text-gray-300">โครงการ</div>
+        <div className="grid grid-cols-[18rem_repeat(12,6rem)] gap-2 items-center border-b border-gray-200 dark:border-gray-700 pb-3 mb-3">
+          <div className="pl-3 text-sm font-semibold text-gray-600 dark:text-gray-300">โครงการ</div>
           {MONTH_LABELS.map((m, idx) => (
             <button
               key={m}
               onClick={() => onMonthHeaderClick?.(idx)}
-              className="text-xs text-center text-gray-600 dark:text-gray-300 hover:underline"
+              className="text-xs-compact w-full text-center text-gray-600 dark:text-gray-300"
               aria-label={`Open month ${m}`}
             >
-              {m}
+              <div className="text-xs font-medium">{m}</div>
+              <div className="text-[10px] text-gray-400">68</div>
             </button>
           ))}
         </div>
 
         <div className="space-y-2">
           {projects.map(project => (
-            <div key={project.id} className="grid grid-cols-[2fr_repeat(12,5rem)] gap-2 items-center bg-gray-50 dark:bg-gray-900 rounded-md p-2">
-              <div className="flex items-center justify-between gap-2">
+            <div key={project.id} className="grid grid-cols-[18rem_repeat(12,6rem)] gap-2 items-center bg-white dark:bg-gray-900 rounded-lg p-3 shadow-sm">
+              <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{project.name}</div>
+                  <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{project.name}</div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">{project.group} • {project.status}</div>
                 </div>
                 <div className="ml-2 flex-shrink-0 space-x-1">
@@ -47,22 +48,18 @@ export const ProjectGanttChart: React.FC<ProjectGanttChartProps> = ({ projects, 
               </div>
 
               {MONTH_LABELS.map((_, monthIdx) => {
-                const startMonth = Number(project.startMonth) || 0;
-                const duration = Number(project.duration) || 1;
-                const isInRange = monthIdx >= startMonth && monthIdx < startMonth + duration;
-                const isFirstMonth = monthIdx === startMonth;
-                
+                const isStart = Number(project.startMonth) === monthIdx;
                 return (
-                  <div key={monthIdx} className="h-8 flex items-center justify-center relative">
-                    {isInRange && (
-                      <div 
-                        className={`${project.color || 'bg-blue-500'} h-6 rounded ${isFirstMonth ? 'rounded-l-md' : ''} ${monthIdx === startMonth + duration - 1 ? 'rounded-r-md' : ''} flex items-center justify-center text-xs text-white font-medium shadow-sm px-2`}
-                        style={{ width: '100%' }}
-                      >
-                        {isFirstMonth && (
-                          <span className="truncate">{project.name}</span>
-                        )}
+                  <div key={monthIdx} className="h-14 flex items-center justify-center">
+                    {isStart ? (
+                      // project.color is expected to be a Tailwind background class like 'bg-blue-500'
+                      <div className={`${project.color} rounded-lg text-white text-xs px-3 py-2 shadow-md max-w-[90%]`}> 
+                        <div className="font-medium">{project.name}</div>
+                        <div className="text-[11px] text-white/90 truncate">{project.meetingStartDate ? `ประชุม: ${project.meetingStartDate}` : ''}</div>
+                        <div className="text-[11px] text-white/90">งบ: {project.budget?.toLocaleString?.() ?? project.budget}</div>
                       </div>
+                    ) : (
+                      <div className="w-full h-2" />
                     )}
                   </div>
                 );

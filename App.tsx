@@ -15,42 +15,6 @@ interface SortConfig {
   direction: SortDirection;
 }
 
-// Deployment base URL (set via env `VITE_DEPLOY_URL`). Fallback to root for local dev.
-const DEPLOY_URL = import.meta.env.VITE_DEPLOY_URL || '/';
-const PROJECTS_CSV_URL = DEPLOY_URL.endsWith('/') ? `${DEPLOY_URL}projects.csv` : `${DEPLOY_URL}/projects.csv`;
-// Optional Apps Script / API endpoint to fetch projects from: set `VITE_API_URL` in your environment.
-const API_URL = import.meta.env.VITE_API_URL || '';
-
-// JSONP helper (used if the Apps Script endpoint only supports JSONP / to bypass CORS)
-function jsonpFetch(url: string, timeout = 8000): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const callbackName = `__jsonp_cb_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-    const sep = url.includes('?') ? '&' : '?';
-    const src = `${url}${sep}callback=${callbackName}`;
-    const script = document.createElement('script');
-    let timer: number | undefined;
-    (window as any)[callbackName] = (data: any) => {
-      clearTimeout(timer);
-      delete (window as any)[callbackName];
-      document.body.removeChild(script);
-      resolve(data);
-    };
-    script.src = src;
-    script.onerror = () => {
-      clearTimeout(timer);
-      delete (window as any)[callbackName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-      reject(new Error('JSONP script error'));
-    };
-    document.body.appendChild(script);
-    timer = window.setTimeout(() => {
-      delete (window as any)[callbackName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-      reject(new Error('JSONP timeout'));
-    }, timeout);
-  });
-}
-
 const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,7 +25,7 @@ const App: React.FC = () => {
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [calendarModalMonth, setCalendarModalMonth] = useState<number | null>(null);
 
-  // Load projects from localStorage or CSV on initial render
+  // Load projects from localStorage or Google Sheets on initial render
   useEffect(() => {
     const loadProjects = async () => {
       setLoading(true);
@@ -70,77 +34,70 @@ const App: React.FC = () => {
         if (savedProjects) {
           setProjects(JSON.parse(savedProjects));
         } else {
-          // Try Apps Script / API URL first (if provided), otherwise fall back to CSV
-          let loaded = false;
-          if (API_URL) {
-            // Helper to accept several response shapes from Apps Script
-            const normalizeApiData = (raw: any): Project[] => {
-              if (!raw) return [];
-              if (Array.isArray(raw)) return raw as Project[];
-              if (raw.data && Array.isArray(raw.data)) return raw.data as Project[];
-              if (raw.projects && Array.isArray(raw.projects)) return raw.projects as Project[];
-              // Sometimes Apps Script returns an object-wrapped response or a CSV text
-              return [];
-            };
-
-            try {
-              const apiResp = await fetch(`${API_URL}?action=getAll`);
-              if (apiResp.ok) {
-                const contentType = apiResp.headers.get('content-type') || '';
-                if (contentType.includes('application/json')) {
-                  const data = await apiResp.json();
-                  const normalized = normalizeApiData(data);
-                  if (normalized.length) {
-                    setProjects(normalized);
-                    loaded = true;
-                  }
-                } else {
-                  // maybe plain text -> try CSV parser
-                  const text = await apiResp.text();
-                  if (text && text.includes('\n')) {
-                    const { parseProjectsFromCSV } = await import('./src/csvParser');
-                    const projectData = parseProjectsFromCSV(text);
-                    if (projectData.length) {
-                      setProjects(projectData);
-                      loaded = true;
-                    }
-                  }
-                }
-              }
-            } catch (err) {
-              // network or CORS error — try JSONP fallback
-              try {
-                const data = await jsonpFetch(`${API_URL}?action=getAll`);
-                if (Array.isArray(data)) {
-                  setProjects(data as Project[]);
-                  loaded = true;
-                } else if (data && data.result && Array.isArray(data.result)) {
-                  setProjects(data.result as Project[]);
-                  loaded = true;
-                }
-              } catch (err2) {
-                console.warn('API JSONP fallback failed', err2);
-              }
-            }
+          // ดึงข้อมูลจาก Google Sheets ผ่าน Apps Script
+          const API_URL = 'https://script.google.com/macros/s/AKfycbwd9pVAvMCG_EHJDW6AZ_S1WY96b1AyugbJ9wy2z81uvhbihPVtUclNrYzMwpczDGj61w/exec';
+          
+          const response = await fetch(API_URL);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
           }
-
-          if (!loaded) {
-            // fallback: fetch projects.csv from the deployed base
-            const response = await fetch(PROJECTS_CSV_URL);
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const csvText = await response.text();
-            // parse CSV using shared parser
-            // (moved to src/csvParser.ts for reuse and testing)
-            // eslint-disable-next-line @typescript-eslint/no-var-requires
-            const { parseProjectsFromCSV } = await import('./src/csvParser');
-            const projectData = parseProjectsFromCSV(csvText);
+          
+          const data = await response.json();
+          
+          if (data.status === 'success' && Array.isArray(data.data)) {
+            const projectData: Project[] = data.data.map((row: any) => ({
+              id: row.id || `p${Date.now()}-${Math.random()}`,
+              name: row.name || '',
+              group: row.group || '',
+              startMonth: parseInt(row.startMonth, 10) || 0,
+              budget: parseInt(row.budget, 10) || 0,
+              color: row.color || '#3b82f6',
+              status: (row.status as ProjectStatus) || 'pending',
+              meetingStartDate: row.meetingStartDate || undefined,
+              meetingEndDate: row.meetingEndDate || undefined,
+            }));
             setProjects(projectData);
+          } else {
+            throw new Error('Invalid data format from Google Sheets');
           }
         }
       } catch (error) {
-        console.error("Failed to load projects:", error);
+        console.error("Failed to load projects from Google Sheets:", error);
+        // Fallback to CSV if Google Sheets fails
+        try {
+          const response = await fetch('/projects.csv');
+          if (response.ok) {
+            const csvText = await response.text();
+            const lines = csvText.trim().split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const projectData: Project[] = lines.slice(1).map(line => {
+              const values = line.split(',').map(v => v.trim());
+              const projectObject = headers.reduce((obj, header, index) => {
+                const value = values[index];
+                switch (header) {
+                  case 'startMonth':
+                  case 'budget':
+                    obj[header as keyof Project] = parseInt(value, 10) || 0;
+                    break;
+                  case 'meetingStartDate':
+                  case 'meetingEndDate':
+                    obj[header as keyof Project] = value || undefined;
+                    break;
+                  case 'status':
+                    obj[header as keyof Project] = value as ProjectStatus;
+                    break;
+                  default:
+                    obj[header as keyof Project] = value;
+                }
+                return obj;
+              }, {} as Record<keyof Project, any>);
+              return projectObject as Project;
+            });
+            setProjects(projectData);
+          }
+        } catch (csvError) {
+          console.error("CSV fallback also failed:", csvError);
+        }
       } finally {
         setLoading(false);
       }
@@ -149,17 +106,11 @@ const App: React.FC = () => {
     loadProjects();
   }, []);
   
-  // Save projects to localStorage whenever they change, but avoid saving
-  // while initial loading is still in progress. We do want to persist an
-  // empty array (so deletions are persisted), therefore only guard on
-  // the `loading` flag rather than the array length.
+  // Save projects to localStorage whenever they change
   useEffect(() => {
-    if (!loading) {
-      try {
-        localStorage.setItem('projectsData', JSON.stringify(projects));
-      } catch (err) {
-        console.warn('Failed to save projects to localStorage', err);
-      }
+    // Don't save the initial empty array or during loading
+    if (projects.length > 0 && !loading) {
+      localStorage.setItem('projectsData', JSON.stringify(projects));
     }
   }, [projects, loading]);
 
