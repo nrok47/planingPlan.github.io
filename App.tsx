@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ProjectGanttChart } from './components/ProjectGanttChart';
 import { ProjectModal } from './components/ProjectModal';
 import { CalendarModal } from './components/CalendarModal';
@@ -25,57 +25,61 @@ const App: React.FC = () => {
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
   const [calendarModalMonth, setCalendarModalMonth] = useState<number | null>(null);
 
+  // Detect dev mode (Vite sets MODE). Use any cast to avoid TS errors in this environment.
+  const IS_DEV = ((import.meta as any).env?.MODE === 'development');
+
+  // Extracted loader so we can call it from a dev button to force refetch.
+  const loadProjects = useCallback(async () => {
+    setLoading(true);
+    try {
+      const savedProjects = localStorage.getItem('projectsData');
+      if (savedProjects) {
+        setProjects(JSON.parse(savedProjects));
+      } else {
+        const response = await fetch('/projects.csv');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const csvText = await response.text();
+        
+        const lines = csvText.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        const projectData: Project[] = lines.slice(1).map(line => {
+          const values = line.split(',').map(v => v.trim());
+          const projectObject = headers.reduce((obj, header, index) => {
+            const value = values[index];
+            switch (header) {
+              case 'startMonth':
+              case 'budget':
+                obj[header as keyof Project] = parseInt(value, 10) || 0;
+                break;
+              case 'meetingStartDate':
+              case 'meetingEndDate':
+                obj[header as keyof Project] = value || undefined;
+                break;
+              case 'status':
+                obj[header as keyof Project] = value as ProjectStatus;
+                break;
+              default:
+                obj[header as keyof Project] = value;
+            }
+            return obj;
+          }, {} as Record<keyof Project, any>);
+          return projectObject as Project;
+        });
+        setProjects(projectData);
+      }
+    } catch (error) {
+      console.error("Failed to load projects:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   // Load projects from localStorage or CSV on initial render
   useEffect(() => {
-    const loadProjects = async () => {
-      setLoading(true);
-      try {
-        const savedProjects = localStorage.getItem('projectsData');
-        if (savedProjects) {
-          setProjects(JSON.parse(savedProjects));
-        } else {
-          const response = await fetch('/projects.csv');
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const csvText = await response.text();
-          
-          const lines = csvText.trim().split('\n');
-          const headers = lines[0].split(',').map(h => h.trim());
-          const projectData: Project[] = lines.slice(1).map(line => {
-            const values = line.split(',').map(v => v.trim());
-            const projectObject = headers.reduce((obj, header, index) => {
-              const value = values[index];
-              switch (header) {
-                case 'startMonth':
-                case 'budget':
-                  obj[header as keyof Project] = parseInt(value, 10) || 0;
-                  break;
-                case 'meetingStartDate':
-                case 'meetingEndDate':
-                  obj[header as keyof Project] = value || undefined;
-                  break;
-                case 'status':
-                  obj[header as keyof Project] = value as ProjectStatus;
-                  break;
-                default:
-                  obj[header as keyof Project] = value;
-              }
-              return obj;
-            }, {} as Record<keyof Project, any>);
-            return projectObject as Project;
-          });
-          setProjects(projectData);
-        }
-      } catch (error) {
-        console.error("Failed to load projects:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadProjects();
-  }, []);
+  }, [loadProjects]);
   
   // Save projects to localStorage whenever they change
   useEffect(() => {
@@ -138,6 +142,16 @@ const App: React.FC = () => {
     if (window.confirm('คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าเริ่มต้น? การเปลี่ยนแปลงทั้งหมดของคุณจะหายไป')) {
       localStorage.removeItem('projectsData');
       window.location.reload();
+    }
+  };
+
+  const handleReloadFromRemote = async () => {
+    // Clear persisted data and re-run loader to fetch remote CSV
+    try {
+      localStorage.removeItem('projectsData');
+      await loadProjects();
+    } catch (err) {
+      console.error('Failed to reload from remote', err);
     }
   };
   
@@ -289,6 +303,16 @@ const App: React.FC = () => {
             >
               <ArrowDownTrayIcon className="h-5 w-5" />
             </button>
+            {IS_DEV && (
+              <button
+                onClick={handleReloadFromRemote}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors text-sm font-medium"
+                aria-label="Reload from remote"
+                title="Reload from remote (dev only)"
+              >
+                Reload
+              </button>
+            )}
             <button
               onClick={handleResetData}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors text-sm font-medium"
