@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ProjectGanttChart } from './components/ProjectGanttChart';
 import { ProjectModal } from './components/ProjectModal';
